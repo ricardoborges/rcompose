@@ -360,4 +360,84 @@ impl Project {
             format!("{}-{}-{}", self.name, service.name, index)
         }
     }
+
+    pub fn sorted_services(&self, names: Option<&[String]>) -> Result<Vec<Service>, String> {
+        let selected: std::collections::HashSet<String> = if let Some(n) = names {
+            let mut set = std::collections::HashSet::new();
+            let mut stack: Vec<String> = n.to_vec();
+            while let Some(item) = stack.pop() {
+                if set.insert(item.clone()) {
+                    if let Some(svc) = self.services.get(&item) {
+                        for dep in &svc.depends_on {
+                            if !set.contains(dep) {
+                                stack.push(dep.clone());
+                            }
+                        }
+                    }
+                }
+            }
+            set
+        } else {
+            self.services.keys().cloned().collect()
+        };
+
+        let mut order = Vec::new();
+        let mut visiting = std::collections::HashSet::new();
+        let mut visited = std::collections::HashSet::new();
+
+        fn visit(
+            name: &str,
+            services: &HashMap<String, Service>,
+            selected: &std::collections::HashSet<String>,
+            visiting: &mut std::collections::HashSet<String>,
+            visited: &mut std::collections::HashSet<String>,
+            order: &mut Vec<Service>,
+            chain: &mut Vec<String>,
+        ) -> Result<(), String> {
+            if !services.contains_key(name) || !selected.contains(name) || visited.contains(name) {
+                return Ok(());
+            }
+
+            if visiting.contains(name) {
+                chain.push(name.to_string());
+                return Err(format!("circular dependency detected: {}", chain.join(" -> ")));
+            }
+
+            visiting.insert(name.to_string());
+            chain.push(name.to_string());
+
+            if let Some(svc) = services.get(name) {
+                for dep in &svc.depends_on {
+                    visit(dep, services, selected, visiting, visited, order, chain)?;
+                }
+            }
+
+            chain.pop();
+            visiting.remove(name);
+            visited.insert(name.to_string());
+            if let Some(svc) = services.get(name) {
+                order.push(svc.clone());
+            }
+
+            Ok(())
+        }
+
+        let mut sorted_keys: Vec<String> = selected.into_iter().collect();
+        sorted_keys.sort();
+
+        let mut chain = Vec::new();
+        for key in sorted_keys {
+            visit(
+                &key,
+                &self.services,
+                &self.services.keys().cloned().collect(),
+                &mut visiting,
+                &mut visited,
+                &mut order,
+                &mut chain,
+            )?;
+        }
+
+        Ok(order)
+    }
 }
