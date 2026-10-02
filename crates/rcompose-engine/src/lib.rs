@@ -6,3 +6,4 @@ pub mod wslc;
 
 pub use engine::*;
 pub use mock::*;
+pub use wslc::WslcEngine;
