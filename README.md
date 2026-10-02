@@ -94,17 +94,40 @@ rcompose config --format json
 
 ## Supported Commands
 
+Global options: `-f <file>`, `-p <project>`, `--env-file <file>`, `--profile <name>` (repeatable).
+
 | Command | Description |
 |---|---|
-| `rcompose up [-d] [--build] [--force-recreate]` | Start services in DAG order (runs independent services concurrently) |
-| `rcompose down [-v] [-t <secs>]` | Stop and remove containers and networks in reverse DAG order |
-| `rcompose ps` | Show container status, ports, and health |
-| `rcompose logs [-f] [-t] [-n <tail>] [services]` | Multiplexed colored streaming logs |
-| `rcompose exec [-it] [-u <user>] <service> <cmd...>` | Execute command in running container |
-| `rcompose start / stop / restart [services]` | Service lifecycle control |
+| `rcompose up [-d] [--build \| --no-build] [--force-recreate] [--remove-orphans] [-t <secs>] [services]` | Build/pull missing images and start services, honoring `depends_on` conditions |
+| `rcompose down [-v] [--remove-orphans] [-t <secs>]` | Stop and remove containers and networks (and named volumes with `-v`) |
+| `rcompose ps [-a] [-q] [services]` | Show container status, health, and ports |
+| `rcompose logs [-f] [-t] [-n <tail>] [services]` | Multiplexed colored logs |
+| `rcompose exec [-T] [-d] [-u <user>] [-w <dir>] [-e K=V] [--index N] <service> <cmd...>` | Execute a command in a running container |
+| `rcompose start / stop / restart [-t <secs>] [services]` | Service lifecycle control |
 | `rcompose build [--no-cache] [--pull] [services]` | Build images defined in `build:` sections |
-| `rcompose config [--format json\|yaml]` | Validate and view interpolated project spec |
+| `rcompose pull [services]` | Pull service images |
+| `rcompose config [--format json\|yaml] [--services] [-q]` | Validate and view the resolved project |
 | `rcompose version` | Show version info |
+
+---
+
+## Compose Compatibility
+
+`rcompose` reads standard `compose.yaml` / `docker-compose.yml` files:
+
+- Variable interpolation (`${VAR}`, `${VAR:-default}`, `${VAR:?error}`, `${VAR:+alt}`, nesting, `$$`) from the process environment and `.env`
+- YAML anchors and merge keys (`<<: *base`), `x-*` extension fields
+- Short and long syntax for `ports`, `volumes`, `env_file` (with `required: false`) and `depends_on`
+- `depends_on` conditions: `service_started`, `service_healthy`, `service_completed_successfully`
+- `healthcheck`, multiple `networks` with `aliases`, `external` networks and volumes, `profiles`
+- `build` (context, dockerfile, args, target), `deploy.replicas`, `deploy.resources.limits`, GPU reservations
+- Project name precedence: `-p` > `COMPOSE_PROJECT_NAME` > `name:` > directory name
+
+Keys the wslc engine cannot honor are reported as warnings instead of being dropped silently:
+
+- `restart` policies (wslc has no restart support yet)
+- Bind mounts of Linux host paths such as `/var/run/docker.sock` (no Docker socket exists on a Windows host); the mount is skipped
+- `privileged`, `cap_add`, `devices`, `extra_hosts`, `secrets`, `configs`, `network_mode`, among others
 
 ---
 

@@ -23,13 +23,15 @@ pub enum ModelError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildConfig {
     pub context: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub dockerfile: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub args: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub pull: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub no_cache: bool,
 }
 
@@ -44,9 +46,10 @@ pub enum VolumeType {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VolumeMount {
     pub mount_type: VolumeType,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     pub target: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub read_only: bool,
 }
 
@@ -106,6 +109,7 @@ impl VolumeMount {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PortMapping {
     pub target: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub published: Option<String>,
     pub protocol: String,
 }
@@ -194,12 +198,17 @@ pub enum DependencyCondition {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Healthcheck {
     /// Normalized test: `["CMD", ...]`, `["CMD-SHELL", "..."]` or `["NONE"]`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub test: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub interval: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub timeout: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub start_period: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub retries: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub disable: bool,
 }
 
@@ -207,64 +216,85 @@ pub struct Healthcheck {
 pub struct Service {
     #[serde(default)]
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub build: Option<BuildConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub entrypoint: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub container_name: Option<String>,
     /// Effective environment: `env_file` contents overlaid by `environment`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub environment: BTreeMap<String, Option<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ports: Vec<PortMapping>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub volumes: Vec<VolumeMount>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tmpfs: Vec<String>,
     /// Engine-level network names; the first one is the primary network.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub networks: Vec<String>,
     /// Extra aliases per engine-level network name.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub network_aliases: BTreeMap<String, Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
     /// Condition per dependency; a missing entry means `service_started`.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub dependency_conditions: BTreeMap<String, DependencyCondition>,
     /// Dependencies declared with `required: false`.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub optional_dependencies: BTreeSet<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub healthcheck: Option<Healthcheck>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hostname: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub domainname: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dns: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dns_search: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dns_opt: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub working_dir: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub labels: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mem_limit: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub cpus: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub shm_size: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ulimits: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_signal: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub stop_grace_period: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gpus: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub stdin_open: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub tty: bool,
     #[serde(default = "default_replicas")]
     pub replicas: usize,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub restart: Option<String>,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 fn default_replicas() -> usize {
@@ -324,7 +354,7 @@ impl Service {
 pub struct NetworkConfig {
     pub key: String,
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub external: bool,
 }
 
@@ -332,7 +362,7 @@ pub struct NetworkConfig {
 pub struct VolumeConfig {
     pub key: String,
     pub name: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub external: bool,
 }
 
@@ -342,9 +372,9 @@ pub struct Project {
     pub directory: PathBuf,
     #[serde(default)]
     pub services: HashMap<String, Service>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub networks: BTreeMap<String, NetworkConfig>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub volumes: BTreeMap<String, VolumeConfig>,
     /// Services defined in the file but disabled by inactive profiles.
     #[serde(skip)]
