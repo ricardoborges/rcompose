@@ -5,3 +5,4 @@ pub mod drift;
 pub mod orchestrator;
 
 pub use dag::*;
+pub use drift::*;
