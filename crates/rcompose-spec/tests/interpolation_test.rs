@@ -53,3 +53,34 @@ EMPTY=
     assert_eq!(env.get("NUM").map(|s| s.as_str()), Some("123"));
     assert_eq!(env.get("EMPTY").map(|s| s.as_str()), Some(""));
 }
+
+#[test]
+fn test_interpolation_operators() {
+    let mut env = HashMap::new();
+    env.insert("SET".to_string(), "x".to_string());
+    env.insert("EMPTY".to_string(), "".to_string());
+
+    // a message containing '-' must not be mistaken for a default
+    let err = interpolate_string("${DB:?must-be-set}", &env).unwrap_err();
+    assert_eq!(err, InterpolationError::MissingRequiredVariable("DB".into(), "must-be-set".into()));
+    assert_eq!(interpolate_string("${SET:?must-be-set}", &env).unwrap(), "x");
+
+    // nested defaults
+    assert_eq!(interpolate_string("${A:-${B:-deep}}", &env).unwrap(), "deep");
+    assert_eq!(interpolate_string("${A:-${SET}}", &env).unwrap(), "x");
+
+    // alternatives
+    assert_eq!(interpolate_string("${SET:+on}", &env).unwrap(), "on");
+    assert_eq!(interpolate_string("${EMPTY:+on}", &env).unwrap(), "");
+    assert_eq!(interpolate_string("${EMPTY+on}", &env).unwrap(), "on");
+
+    // bare $VAR and a lone $
+    assert_eq!(interpolate_string("$SET-$1 cost $", &env).unwrap(), "x-$1 cost $");
+    assert!(interpolate_string("${UNCLOSED", &env).is_err());
+}
+
+#[test]
+fn test_env_file_export_prefix() {
+    let env = parse_env_content("export KEY=value\n");
+    assert_eq!(env.get("KEY").map(String::as_str), Some("value"));
+}

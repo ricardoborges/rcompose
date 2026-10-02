@@ -1,7 +1,6 @@
 use rcompose_core::drift::*;
 use rcompose_engine::engine::ContainerDetails;
 use rcompose_spec::model::Service;
-use std::collections::HashMap;
 
 #[test]
 fn test_compute_config_hash_stability() {
@@ -50,8 +49,8 @@ fn test_reconcile_service_state() {
         image: "nginx:alpine".to_string(),
         state: "running".to_string(),
         running: true,
-        labels: HashMap::new(),
         config_hash: Some(expected_hash.clone()),
+        ..Default::default()
     };
     assert_eq!(
         reconcile_service_state(&svc, Some(&matching_running), false),
@@ -84,4 +83,20 @@ fn test_reconcile_service_state() {
         reconcile_service_state(&svc, Some(&matching_running), true),
         DesiredAction::Recreate
     );
+}
+
+#[test]
+fn test_hash_ignores_non_container_fields() {
+    let mut svc = Service::default();
+    svc.name = "web".to_string();
+    svc.image = Some("nginx".to_string());
+    let base = compute_config_hash(&svc);
+
+    svc.depends_on = vec!["db".to_string()];
+    svc.replicas = 3;
+    svc.restart = Some("always".to_string());
+    assert_eq!(compute_config_hash(&svc), base);
+
+    svc.hostname = Some("web.local".to_string());
+    assert_ne!(compute_config_hash(&svc), base);
 }

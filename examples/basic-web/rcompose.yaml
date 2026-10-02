@@ -1,8 +1,0 @@
-version: "3.8"
-
-services:
-  web:
-    wsl:
-      session: "dev-session"
-      memory_mb: 1024
-      cpus: 2

@@ -1,69 +1,32 @@
 use crate::cli::{BuildArgs, ServiceListArgs, StopArgs};
-use crate::ui;
 use rcompose_core::orchestrator::Orchestrator;
-use rcompose_engine::engine::{BuildOptions, ContainerEngine};
 use rcompose_engine::WslcEngine;
 
+fn targets(services: &[String]) -> Option<&[String]> {
+    (!services.is_empty()).then_some(services)
+}
+
 pub async fn handle_start(orchestrator: &Orchestrator<WslcEngine>, args: ServiceListArgs) -> anyhow::Result<()> {
-    let targets = if args.services.is_empty() {
-        None
-    } else {
-        Some(args.services.as_slice())
-    };
-    orchestrator.start(targets).await?;
-    ui::success("Services started");
+    orchestrator.start(targets(&args.services)).await?;
     Ok(())
 }
 
 pub async fn handle_stop(orchestrator: &Orchestrator<WslcEngine>, args: StopArgs) -> anyhow::Result<()> {
-    let targets = if args.services.is_empty() {
-        None
-    } else {
-        Some(args.services.as_slice())
-    };
-    orchestrator.stop(targets).await?;
-    ui::success("Services stopped");
+    orchestrator.stop(targets(&args.services), args.timeout).await?;
     Ok(())
 }
 
 pub async fn handle_restart(orchestrator: &Orchestrator<WslcEngine>, args: StopArgs) -> anyhow::Result<()> {
-    let targets = if args.services.is_empty() {
-        None
-    } else {
-        Some(args.services.as_slice())
-    };
-    orchestrator.restart(targets).await?;
-    ui::success("Services restarted");
+    orchestrator.restart(targets(&args.services), args.timeout).await?;
     Ok(())
 }
 
 pub async fn handle_build(orchestrator: &Orchestrator<WslcEngine>, args: BuildArgs) -> anyhow::Result<()> {
-    let project = orchestrator.project();
-    let filter = !args.services.is_empty();
+    orchestrator.build(targets(&args.services), args.pull, args.no_cache).await?;
+    Ok(())
+}
 
-    for (name, svc) in &project.services {
-        if filter && !args.services.contains(name) {
-            continue;
-        }
-
-        if let Some(ref build_cfg) = svc.build {
-            let tag = svc.image.clone().unwrap_or_else(|| format!("{}-{}", project.name, name));
-            ui::info(&format!("Building image for service '{}' ({})", name, tag));
-
-            let build_opts = BuildOptions {
-                tag,
-                context: build_cfg.context.clone(),
-                dockerfile: build_cfg.dockerfile.clone(),
-                args: build_cfg.args.clone(),
-                target: build_cfg.target.clone(),
-                pull: args.pull || build_cfg.pull,
-                no_cache: args.no_cache || build_cfg.no_cache,
-            };
-
-            orchestrator.engine().build_image(build_opts).await?;
-            ui::success(&format!("Image built for service '{}'", name));
-        }
-    }
-
+pub async fn handle_pull(orchestrator: &Orchestrator<WslcEngine>, args: ServiceListArgs) -> anyhow::Result<()> {
+    orchestrator.pull(targets(&args.services)).await?;
     Ok(())
 }

@@ -3,7 +3,6 @@
 use rcompose_engine::engine::ContainerDetails;
 use rcompose_spec::model::Service;
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DesiredAction {
@@ -13,48 +12,33 @@ pub enum DesiredAction {
     Recreate,
 }
 
+/// Service fields that do not change the container itself and so must not trigger a recreate.
+const NON_CONTAINER_FIELDS: &[&str] = &[
+    "name",
+    "depends_on",
+    "dependency_conditions",
+    "optional_dependencies",
+    "profiles",
+    "replicas",
+    "restart",
+];
+
 /// Computes a canonical SHA-256 hash (16-char hex) of the service configuration.
 pub fn compute_config_hash(service: &Service) -> String {
-    let mut sorted_env = BTreeMap::new();
-    for (k, v) in &service.environment {
-        sorted_env.insert(k.clone(), v.clone());
-    }
-
-    let mut sorted_labels = BTreeMap::new();
-    for (k, v) in &service.labels {
-        // Exclude internal compose labels from the hash calculation
-        if !k.starts_with("com.docker.compose.") {
-            sorted_labels.insert(k.clone(), v.clone());
+    let mut canonical = serde_json::to_value(service).unwrap_or_default();
+    if let Some(map) = canonical.as_object_mut() {
+        for field in NON_CONTAINER_FIELDS {
+            map.remove(*field);
+        }
+        if let Some(serde_json::Value::Object(labels)) = map.get_mut("labels") {
+            labels.retain(|k, _| !k.starts_with("com.docker.compose."));
         }
     }
 
-    let canonical = serde_json::json!({
-        "image": &service.image,
-        "build": &service.build,
-        "command": &service.command,
-        "entrypoint": &service.entrypoint,
-        "environment": sorted_env,
-        "ports": &service.ports,
-        "volumes": &service.volumes,
-        "tmpfs": &service.tmpfs,
-        "networks": &service.networks,
-        "user": &service.user,
-        "working_dir": &service.working_dir,
-        "labels": sorted_labels,
-        "mem_limit": &service.mem_limit,
-        "cpus": &service.cpus,
-        "shm_size": &service.shm_size,
-        "ulimits": &service.ulimits,
-        "stop_signal": &service.stop_signal,
-        "gpus": &service.gpus,
-        "wsl_session": &service.wsl_session,
-    });
-
+    // serde_json maps are ordered, so the serialization is stable
     let json_bytes = serde_json::to_vec(&canonical).unwrap_or_default();
-    let mut hasher = Sha256::new();
-    hasher.update(&json_bytes);
-    let result = hasher.finalize();
-    format!("{:x}", result)[..16].to_string()
+    let digest = Sha256::digest(&json_bytes);
+    format!("{:x}", digest)[..16].to_string()
 }
 
 /// Compares current service configuration against an existing container to determine lifecycle action.
@@ -72,20 +56,15 @@ pub fn reconcile_service_state(
         return DesiredAction::Recreate;
     }
 
-    let current_hash = compute_config_hash(service);
-
-    if let Some(ref prev_hash) = existing.config_hash {
-        if prev_hash == &current_hash {
+    match existing.config_hash {
+        Some(ref prev_hash) if *prev_hash == compute_config_hash(service) => {
             if existing.running {
                 DesiredAction::UpToDate
             } else {
                 DesiredAction::Start
             }
-        } else {
-            DesiredAction::Recreate
         }
-    } else {
-        // Container has no recorded config hash, recreate it to inject the hash
-        DesiredAction::Recreate
+        // Changed configuration, or no recorded hash to compare against
+        _ => DesiredAction::Recreate,
     }
 }

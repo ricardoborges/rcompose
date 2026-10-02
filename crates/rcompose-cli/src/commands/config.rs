@@ -6,13 +6,19 @@ pub fn handle_config(project: &Project, args: ConfigArgs) -> anyhow::Result<()> 
         return Ok(());
     }
 
-    if args.format.to_lowercase() == "json" {
-        let json_str = serde_json::to_string_pretty(project)?;
-        println!("{}", json_str);
-    } else {
-        let yaml_str = serde_yaml::to_string(project)?;
-        println!("{}", yaml_str);
+    if args.services {
+        let mut names: Vec<&String> = project.services.keys().collect();
+        names.sort();
+        for name in names {
+            println!("{}", name);
+        }
+        return Ok(());
     }
 
+    if args.format.eq_ignore_ascii_case("json") {
+        println!("{}", serde_json::to_string_pretty(project)?);
+    } else {
+        print!("{}", serde_yaml::to_string(project)?);
+    }
     Ok(())
 }

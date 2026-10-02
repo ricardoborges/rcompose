@@ -1,36 +1,21 @@
-//! Terminal UI helpers, progress spinners, and status output.
+//! Terminal output helpers: Compose-style progress lines and status messages.
 
 use colored::Colorize;
-use indicatif::{ProgressBar, ProgressStyle};
-use std::time::Duration;
+use rcompose_core::orchestrator::{ProgressEvent, ProgressKind, Reporter};
+use std::sync::Arc;
 
-pub fn spinner(message: &'static str) -> ProgressBar {
-    let pb = ProgressBar::new_spinner();
-    pb.set_style(
-        ProgressStyle::default_spinner()
-            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏✔")
-            .template("{spinner:.green} {msg}")
-            .expect("valid template"),
-    );
-    pb.set_message(message);
-    pb.enable_steady_tick(Duration::from_millis(80));
-    pb
+/// Prints each orchestrator step as ` ✔ Container web-1  Started`.
+pub fn progress_reporter() -> Reporter {
+    Arc::new(|ev: ProgressEvent| {
+        let line = format!("{:<44} {}", ev.resource, ev.status);
+        match ev.kind {
+            ProgressKind::Working => eprintln!(" {} {}", "⠿".cyan(), line.dimmed()),
+            ProgressKind::Done => eprintln!(" {} {}", "✔".green().bold(), line),
+            ProgressKind::Warning => eprintln!(" {} {}", "!".yellow().bold(), line.yellow()),
+        }
+    })
 }
 
-pub fn success(msg: &str) {
-    println!("{} {}", "✔".green().bold(), msg);
-}
-
-pub fn info(msg: &str) {
-    println!("{} {}", "ℹ".blue().bold(), msg);
-}
-
-#[allow(dead_code)]
 pub fn warn(msg: &str) {
-    eprintln!("{} {}", "⚠".yellow().bold(), msg.yellow());
-}
-
-#[allow(dead_code)]
-pub fn error(msg: &str) {
-    eprintln!("{} {}", "✖".red().bold(), msg.red());
+    eprintln!("{} {}", "WARN".yellow().bold(), msg.yellow());
 }

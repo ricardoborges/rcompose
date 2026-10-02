@@ -3,7 +3,6 @@
 mod cli;
 mod commands;
 mod logs;
-mod signals;
 mod ui;
 
 use clap::Parser;
@@ -15,69 +14,63 @@ use rcompose_spec::loader::{find_compose_file, load_project, LoadOptions};
 use std::env;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
+async fn main() {
+    if let Err(err) = run().await {
+        eprintln!("{} {:#}", colored::Colorize::bold(colored::Colorize::red("Error:")), err);
+        std::process::exit(1);
+    }
+}
+
+async fn run() -> anyhow::Result<()> {
     let args = Cli::parse();
 
     if matches!(args.command, Commands::Version) {
-        println!("rcompose version 0.1.0 (wslc engine)");
+        println!("rcompose version {} (wslc engine)", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
 
-    // 1. Locate compose file
     let current_dir = env::current_dir()?;
-    let compose_path = if let Some(ref p) = args.file {
-        if !p.is_file() {
-            anyhow::bail!("Compose file not found at: {}", p.display());
-        }
-        p.clone()
-    } else if let Some(p) = find_compose_file(&current_dir) {
-        p
-    } else {
-        anyhow::bail!(
-            "No compose file found (looked for compose.yaml / compose.yml / docker-compose.yml in '{}' and parents)",
-            current_dir.display()
-        );
+    let compose_path = match args.file {
+        Some(ref p) if !p.is_file() => anyhow::bail!("Compose file not found at: {}", p.display()),
+        Some(ref p) => p.clone(),
+        None => find_compose_file(&current_dir).ok_or_else(|| {
+            anyhow::anyhow!(
+                "no compose file found (looked for compose.yaml / compose.yml / docker-compose.yaml / docker-compose.yml in '{}' and parents)",
+                current_dir.display()
+            )
+        })?,
     };
 
-    // 2. Locate rcompose.yml extension if present
-    let rcompose_path = args.rcompose_file.as_ref().map(|p| p.as_path());
-
-    // 3. Load Project spec
     let opts = LoadOptions {
         project_name: args.project_name.clone(),
         env_file: args.env_file.clone(),
+        profiles: args.profiles.clone(),
         ..Default::default()
     };
+    let project = load_project(&compose_path, opts).map_err(|e| anyhow::anyhow!("failed to load project: {}", e))?;
+    for warning in &project.warnings {
+        ui::warn(warning);
+    }
 
-    let project = load_project(&compose_path, rcompose_path, opts)
-        .map_err(|e| anyhow::anyhow!("Failed to load project: {}", e))?;
-
-    // Handle Config command early (doesn't require wslc.exe engine)
+    // `config` doesn't require the wslc engine
     if let Commands::Config(config_args) = args.command {
         return config::handle_config(&project, config_args);
     }
 
-    // 4. Initialize WSLC Engine and Orchestrator
-    let engine = WslcEngine::new()
-        .map_err(|e| anyhow::anyhow!("Failed to initialize WSLC engine: {}", e))?;
-    let orchestrator = Orchestrator::new(project, engine);
+    let engine = WslcEngine::new().map_err(|e| anyhow::anyhow!("failed to initialize the wslc engine: {}", e))?;
+    let orchestrator = Orchestrator::new(project, engine).with_reporter(ui::progress_reporter());
 
-    // 5. Setup signal handler
-    let _running = signals::setup_ctrl_c();
-
-    // 6. Execute Subcommands
     match args.command {
-        Commands::Up(up_args) => up::handle_up(&orchestrator, up_args).await?,
-        Commands::Down(down_args) => down::handle_down(&orchestrator, down_args).await?,
-        Commands::Ps(ps_args) => ps::handle_ps(&orchestrator, ps_args).await?,
-        Commands::Logs(logs_args) => logs_cmd::handle_logs(&orchestrator, logs_args).await?,
-        Commands::Exec(exec_args) => exec::handle_exec(&orchestrator, exec_args)?,
-        Commands::Start(start_args) => lifecycle::handle_start(&orchestrator, start_args).await?,
-        Commands::Stop(stop_args) => lifecycle::handle_stop(&orchestrator, stop_args).await?,
-        Commands::Restart(restart_args) => lifecycle::handle_restart(&orchestrator, restart_args).await?,
-        Commands::Build(build_args) => lifecycle::handle_build(&orchestrator, build_args).await?,
+        Commands::Up(a) => up::handle_up(&orchestrator, a).await,
+        Commands::Down(a) => down::handle_down(&orchestrator, a).await,
+        Commands::Ps(a) => ps::handle_ps(&orchestrator, a).await,
+        Commands::Logs(a) => logs_cmd::handle_logs(&orchestrator, a).await,
+        Commands::Exec(a) => exec::handle_exec(&orchestrator, a),
+        Commands::Start(a) => lifecycle::handle_start(&orchestrator, a).await,
+        Commands::Stop(a) => lifecycle::handle_stop(&orchestrator, a).await,
+        Commands::Restart(a) => lifecycle::handle_restart(&orchestrator, a).await,
+        Commands::Build(a) => lifecycle::handle_build(&orchestrator, a).await,
+        Commands::Pull(a) => lifecycle::handle_pull(&orchestrator, a).await,
         Commands::Config(_) | Commands::Version => unreachable!(),
     }
-
-    Ok(())
 }

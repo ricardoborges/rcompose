@@ -1,7 +1,6 @@
-//! Multiplexed streaming log reader with colored prefixes per service.
+//! Multiplexed streaming log reader with colored prefixes per container.
 
 use colored::{ColoredString, Colorize};
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -9,98 +8,79 @@ use tokio::process::Command;
 
 const COLORS: &[fn(&str) -> ColoredString] = &[
     |s| s.cyan(),
-    |s| s.green(),
     |s| s.yellow(),
-    |s| s.blue(),
+    |s| s.green(),
     |s| s.magenta(),
+    |s| s.blue(),
     |s| s.bright_cyan(),
-    |s| s.bright_green(),
     |s| s.bright_yellow(),
+    |s| s.bright_green(),
 ];
 
-pub struct LogMultiplexer {
-    wslc_bin: PathBuf,
+pub struct LogOptions {
+    pub follow: bool,
+    pub timestamps: bool,
+    pub tail: Option<String>,
 }
 
-impl LogMultiplexer {
-    pub fn new(wslc_bin: PathBuf) -> Self {
-        Self { wslc_bin }
+/// Streams `wslc logs` of every container, each line prefixed with the container name.
+/// Returns when all streams end; dropping the future kills the child processes.
+pub async fn stream_logs(wslc_bin: PathBuf, containers: &[String], opts: LogOptions) -> anyhow::Result<()> {
+    let width = containers.iter().map(String::len).max().unwrap_or(0);
+    let mut tasks = Vec::new();
+
+    for (i, cname) in containers.iter().enumerate() {
+        let mut cmd = Command::new(&wslc_bin);
+        cmd.arg("logs");
+        if opts.follow {
+            cmd.arg("-f");
+        }
+        if opts.timestamps {
+            cmd.arg("-t");
+        }
+        if let Some(ref t) = opts.tail {
+            cmd.args(["-n", t]);
+        }
+        cmd.arg(cname)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+
+        let mut child = cmd.spawn()?;
+        let prefix = COLORS[i % COLORS.len()](&format!("{:<width$} |", cname, width = width)).to_string();
+
+        let mut pumps = Vec::new();
+        if let Some(out) = child.stdout.take() {
+            let p = prefix.clone();
+            pumps.push(tokio::spawn(async move {
+                let mut lines = BufReader::new(out).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    println!("{} {}", p, line);
+                }
+            }));
+        }
+        if let Some(err) = child.stderr.take() {
+            let p = prefix.clone();
+            pumps.push(tokio::spawn(async move {
+                let mut lines = BufReader::new(err).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    eprintln!("{} {}", p, line);
+                }
+            }));
+        }
+
+        tasks.push(async move {
+            let _ = child.wait().await;
+            for pump in pumps {
+                let _ = pump.await;
+            }
+        });
     }
 
-    pub async fn stream_logs(
-        &self,
-        containers: &[(String, String)], // (container_name, service_name)
-        follow: bool,
-        tail: Option<usize>,
-    ) -> anyhow::Result<()> {
-        let mut color_map = HashMap::new();
-        for (i, (_, service)) in containers.iter().enumerate() {
-            color_map.entry(service.clone()).or_insert_with(|| {
-                let color_fn = COLORS[i % COLORS.len()];
-                color_fn
-            });
-        }
-
-        let mut tasks = Vec::new();
-
-        for (cname, sname) in containers {
-            let bin = self.wslc_bin.clone();
-            let cname = cname.clone();
-            let sname = sname.clone();
-            let color_fn = color_map[&sname];
-
-            let handle = tokio::spawn(async move {
-                let mut cmd = Command::new(bin);
-                cmd.arg("logs");
-                if follow {
-                    cmd.arg("-f");
-                }
-                if let Some(t) = tail {
-                    cmd.arg("--tail");
-                    cmd.arg(t.to_string());
-                }
-                cmd.arg(&cname);
-                cmd.stdout(Stdio::piped());
-                cmd.stderr(Stdio::piped());
-
-                if let Ok(mut child) = cmd.spawn() {
-                    let stdout = child.stdout.take();
-                    let stderr = child.stderr.take();
-
-                    let prefix = format!("{:15} |", sname);
-                    let colored_prefix = color_fn(&prefix);
-
-                    if let Some(out) = stdout {
-                        let mut reader = BufReader::new(out).lines();
-                        let p = colored_prefix.clone();
-                        tokio::spawn(async move {
-                            while let Ok(Some(line)) = reader.next_line().await {
-                                println!("{} {}", p, line);
-                            }
-                        });
-                    }
-
-                    if let Some(err) = stderr {
-                        let mut reader = BufReader::new(err).lines();
-                        let p = colored_prefix.clone();
-                        tokio::spawn(async move {
-                            while let Ok(Some(line)) = reader.next_line().await {
-                                eprintln!("{} {}", p, line);
-                            }
-                        });
-                    }
-
-                    let _ = child.wait().await;
-                }
-            });
-
-            tasks.push(handle);
-        }
-
-        for task in tasks {
-            let _ = task.await;
-        }
-
-        Ok(())
+    // children run concurrently; waiting in order just collects them
+    for task in tasks {
+        task.await;
     }
+    Ok(())
 }

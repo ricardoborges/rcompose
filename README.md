@@ -12,7 +12,6 @@ Microsoft's native WSL container preview (`wslc.exe`) runs Linux containers dire
 - **Rust Performance & Safety**: High-speed, single native executable with asynchronous I/O and zero-cost abstractions.
 - **DAG Parallel Orchestrator**: Uses Directed Acyclic Graphs (`petgraph`) and Tokio to start independent services concurrently while strictly enforcing `depends_on`.
 - **Config Drift Detection**: Computes canonical SHA-256 hashes stored in container labels (`com.docker.compose.config-hash`) to recreate only modified containers on `rcompose up`.
-- **Rancher-style Extensions (`rcompose.yml`)**: Allows specifying WSL-specific runtime flags (e.g. `wsl.gpus`, `wsl.session`, `wsl.memory_mb`, `wsl.cpus`) in a complementary overlay file without polluting standard `compose.yaml`.
 - **Resilient Engine**: Automatically handles Windows kernel and WSL preview concurrency errors (`ERROR_SHARING_VIOLATION`, `ERROR_ALREADY_EXISTS`) via smart exponential backoff retries.
 - **Rich Terminal UX**: Spinners and progress indicators with `indicatif`, multiplexed color-coded logs per service, and graceful `Ctrl+C` shutdown.
 
@@ -26,7 +25,7 @@ Microsoft's native WSL container preview (`wslc.exe`) runs Linux containers dire
 rcompose/
 ├── Cargo.toml                 # Root workspace
 ├── crates/
-│   ├── rcompose-spec/         # Compose & rcompose.yml parsers, variable interpolation, env loading
+│   ├── rcompose-spec/         # Compose file parser, variable interpolation, env loading
 │   ├── rcompose-engine/       # ContainerEngine trait & WslcEngine subprocess driver with retries
 │   ├── rcompose-core/         # DAG dependency scheduler, Tokio parallel executor & drift detector
 │   └── rcompose-cli/          # CLI interface (Clap v4), terminal UI & log multiplexer
@@ -82,22 +81,9 @@ rcompose down -v
 
 ---
 
-## WSL Extensions: `rcompose.yml`
+## Inspecting the Configuration
 
-In addition to standard `compose.yaml`, you can create an optional `rcompose.yml` in the same directory to configure WSL-specific options:
-
-```yaml
-version: "3.8"
-services:
-  web:
-    wsl:
-      session: "dev-session"   # Target specific WSL session (--session)
-      gpus: all                # Enable GPU pass-through (--gpus)
-      memory_mb: 2048          # Limit memory (-m 2048m)
-      cpus: 2                  # Limit CPUs (--cpus 2)
-```
-
-Run `rcompose config` to inspect the resolved configuration with variables and extensions applied:
+Run `rcompose config` to inspect the resolved configuration with variables applied:
 
 ```powershell
 rcompose config

@@ -7,22 +7,22 @@ use std::path::PathBuf;
 #[command(
     name = "rcompose",
     author = "Ricardo Borges",
-    version = "0.1.0",
+    version,
     about = "Docker Compose for Windows WSL Containers (wslc) in Rust",
-    long_about = "A high-performance, DAG-scheduled, WSL-native Docker Compose alternative built in Rust."
+    long_about = "A Docker Compose compatible tool that runs Compose projects on WSL containers (wslc)."
 )]
 pub struct Cli {
-    #[arg(short = 'f', long = "file", help = "Path to compose file")]
+    #[arg(short = 'f', long = "file", global = true, help = "Path to compose file")]
     pub file: Option<PathBuf>,
 
-    #[arg(short = 'p', long = "project-name", help = "Project name override")]
+    #[arg(short = 'p', long = "project-name", global = true, help = "Project name override")]
     pub project_name: Option<String>,
 
-    #[arg(long = "env-file", help = "Path to an alternate environment file")]
+    #[arg(long = "env-file", global = true, help = "Path to an alternate environment file")]
     pub env_file: Option<PathBuf>,
 
-    #[arg(long = "rcompose-file", help = "Path to rcompose.yml extension file")]
-    pub rcompose_file: Option<PathBuf>,
+    #[arg(long = "profile", global = true, help = "Enable a profile (can be repeated)")]
+    pub profiles: Vec<String>,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -44,6 +44,9 @@ pub enum Commands {
 
     #[command(about = "Build or rebuild services")]
     Build(BuildArgs),
+
+    #[command(about = "Pull service images")]
+    Pull(ServiceListArgs),
 
     #[command(about = "Start services")]
     Start(ServiceListArgs),
@@ -69,14 +72,20 @@ pub struct UpArgs {
     #[arg(short = 'd', long = "detach", help = "Detached mode: Run containers in the background")]
     pub detach: bool,
 
-    #[arg(long = "build", help = "Build images before starting containers")]
+    #[arg(long = "build", conflicts_with = "no_build", help = "Build images before starting containers")]
     pub build: bool,
+
+    #[arg(long = "no-build", help = "Don't build an image, even if it's missing")]
+    pub no_build: bool,
 
     #[arg(long = "force-recreate", help = "Recreate containers even if their configuration has not changed")]
     pub force_recreate: bool,
 
     #[arg(long = "remove-orphans", help = "Remove containers for services not defined in the Compose file")]
     pub remove_orphans: bool,
+
+    #[arg(short = 't', long = "timeout", help = "Shutdown timeout in seconds when containers are stopped")]
+    pub timeout: Option<u32>,
 
     #[arg(help = "Services to start (defaults to all)")]
     pub services: Vec<String>,
@@ -90,14 +99,17 @@ pub struct DownArgs {
     #[arg(long = "remove-orphans", help = "Remove containers for services not defined in the Compose file")]
     pub remove_orphans: bool,
 
-    #[arg(short = 't', long = "timeout", default_value_t = 10, help = "Specify a shutdown timeout in seconds")]
-    pub timeout: u32,
+    #[arg(short = 't', long = "timeout", help = "Specify a shutdown timeout in seconds")]
+    pub timeout: Option<u32>,
 }
 
 #[derive(Args, Debug)]
 pub struct PsArgs {
-    #[arg(short = 'a', long = "all", help = "Show all stopped containers as well")]
+    #[arg(short = 'a', long = "all", help = "Show all containers, including stopped ones")]
     pub all: bool,
+
+    #[arg(short = 'q', long = "quiet", help = "Only display container IDs")]
+    pub quiet: bool,
 
     #[arg(help = "Filter by service names")]
     pub services: Vec<String>,
@@ -112,7 +124,7 @@ pub struct LogsArgs {
     pub timestamps: bool,
 
     #[arg(short = 'n', long = "tail", help = "Number of lines to show from the end of the logs")]
-    pub tail: Option<usize>,
+    pub tail: Option<String>,
 
     #[arg(help = "Services to show logs for")]
     pub services: Vec<String>,
@@ -138,8 +150,8 @@ pub struct ServiceListArgs {
 
 #[derive(Args, Debug)]
 pub struct StopArgs {
-    #[arg(short = 't', long = "timeout", default_value_t = 10, help = "Specify a shutdown timeout in seconds")]
-    pub timeout: u32,
+    #[arg(short = 't', long = "timeout", help = "Specify a shutdown timeout in seconds")]
+    pub timeout: Option<u32>,
 
     #[arg(help = "Services to stop")]
     pub services: Vec<String>,
@@ -147,22 +159,28 @@ pub struct StopArgs {
 
 #[derive(Args, Debug)]
 pub struct ExecArgs {
-    #[arg(short = 'i', long = "interactive", default_value_t = true, help = "Keep STDIN open even if not attached")]
-    pub interactive: bool,
+    #[arg(short = 'T', long = "no-TTY", help = "Disable pseudo-TTY allocation")]
+    pub no_tty: bool,
 
-    #[arg(short = 't', long = "tty", default_value_t = true, help = "Allocate a pseudo-TTY")]
-    pub tty: bool,
+    #[arg(short = 'd', long = "detach", help = "Run command in the background")]
+    pub detach: bool,
 
     #[arg(short = 'u', long = "user", help = "Run as specified username or uid")]
     pub user: Option<String>,
 
-    #[arg(short = 'w', long = "workdir", help = "Path to workdir directory for this run")]
+    #[arg(short = 'w', long = "workdir", help = "Path to workdir directory for this command")]
     pub workdir: Option<String>,
+
+    #[arg(short = 'e', long = "env", help = "Set environment variables (KEY=VALUE)")]
+    pub env: Vec<String>,
+
+    #[arg(long = "index", default_value_t = 1, help = "Index of the container if the service has multiple replicas")]
+    pub index: usize,
 
     #[arg(help = "Target service")]
     pub service: String,
 
-    #[arg(trailing_var_arg = true, required = true, help = "Command and arguments to execute")]
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true, help = "Command and arguments to execute")]
     pub command: Vec<String>,
 }
 
@@ -173,4 +191,7 @@ pub struct ConfigArgs {
 
     #[arg(short = 'q', long = "quiet", help = "Only validate the configuration, do not print")]
     pub quiet: bool,
+
+    #[arg(long = "services", help = "Print the service names, one per line")]
+    pub services: bool,
 }

@@ -1,6 +1,6 @@
 //! Variable interpolation and .env file loading following the Compose Specification.
 
-use regex::Regex;
+use serde_yaml::Value;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -14,101 +14,146 @@ pub enum InterpolationError {
     SyntaxError(String),
 }
 
-/// Interpolates `${VAR}` expressions in `input` using provided `env` map.
+/// Interpolates `$VAR` / `${...}` expressions in `input` using the provided `env` map.
 ///
 /// Supported formats:
 /// - `$$`: literal `$`
-/// - `${VAR}`: direct value of `VAR` or empty string if not found
-/// - `${VAR:-default}`: `default` if `VAR` is unset or empty
-/// - `${VAR-default}`: `default` only if `VAR` is unset
-/// - `${VAR:?error}`: returns error if `VAR` is unset or empty
-/// - `${VAR?error}`: returns error only if `VAR` is unset
+/// - `$VAR`, `${VAR}`: value of `VAR`, or empty string if unset
+/// - `${VAR:-default}` / `${VAR-default}`: `default` if `VAR` is unset or empty / unset
+/// - `${VAR:?error}` / `${VAR?error}`: error if `VAR` is unset or empty / unset
+/// - `${VAR:+alt}` / `${VAR+alt}`: `alt` if `VAR` is set and non-empty / set
+///
+/// Defaults and alternatives may themselves contain interpolations (`${A:-${B}}`).
 pub fn interpolate_string(
     input: &str,
     env: &HashMap<String, String>,
 ) -> Result<String, InterpolationError> {
-    // Regex matching:
-    // 1. "$$" (escape)
-    // 2. "${...}"
-    // 3. "$VAR"
-    let re = Regex::new(r"(\$\$|\$\{([a-zA-Z0-9_]+)(?::?[-?]([^}]*))?\}|\$([a-zA-Z0-9_]+))")
-        .map_err(|e| InterpolationError::SyntaxError(e.to_string()))?;
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
 
-    let mut result = String::with_capacity(input.len());
-    let mut last_idx = 0;
+    while let Some(pos) = rest.find('$') {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + 1..];
 
-    for mat in re.find_iter(input) {
-        result.push_str(&input[last_idx..mat.start()]);
-        let token = mat.as_str();
-
-        if token == "$$" {
-            result.push('$');
-        } else if token.starts_with("${") && token.ends_with('}') {
-            let inner = &token[2..token.len() - 1];
-            let interpolated = resolve_braced_var(inner, env)?;
-            result.push_str(&interpolated);
-        } else if token.starts_with('$') {
-            let var_name = &token[1..];
-            if let Some(val) = env.get(var_name) {
-                result.push_str(val);
+        if let Some(stripped) = after.strip_prefix('$') {
+            out.push('$');
+            rest = stripped;
+        } else if let Some(braced) = after.strip_prefix('{') {
+            let end = find_closing_brace(braced)
+                .ok_or_else(|| InterpolationError::SyntaxError(rest.to_string()))?;
+            out.push_str(&resolve_braced(&braced[..end], env)?);
+            rest = &braced[end + 1..];
+        } else {
+            let name_len = var_name_len(after);
+            if name_len == 0 {
+                out.push('$');
+                rest = after;
+            } else {
+                if let Some(val) = env.get(&after[..name_len]) {
+                    out.push_str(val);
+                }
+                rest = &after[name_len..];
             }
         }
-        last_idx = mat.end();
     }
 
-    result.push_str(&input[last_idx..]);
-    Ok(result)
+    out.push_str(rest);
+    Ok(out)
 }
 
-fn resolve_braced_var(
-    inner: &str,
+/// Recursively interpolates every string scalar of a parsed YAML tree (mapping keys excluded).
+pub fn interpolate_value(
+    value: &mut Value,
     env: &HashMap<String, String>,
-) -> Result<String, InterpolationError> {
-    if let Some(idx) = inner.find(":-") {
-        let var_name = &inner[..idx];
-        let default_val = &inner[idx + 2..];
-        match env.get(var_name) {
-            Some(val) if !val.is_empty() => Ok(val.clone()),
-            _ => Ok(default_val.to_string()),
+) -> Result<(), InterpolationError> {
+    match value {
+        Value::String(s) => *s = interpolate_string(s, env)?,
+        Value::Sequence(seq) => {
+            for item in seq {
+                interpolate_value(item, env)?;
+            }
         }
-    } else if let Some(idx) = inner.find('-') {
-        let var_name = &inner[..idx];
-        let default_val = &inner[idx + 1..];
-        match env.get(var_name) {
-            Some(val) => Ok(val.clone()),
-            None => Ok(default_val.to_string()),
+        Value::Mapping(map) => {
+            for (_, item) in map.iter_mut() {
+                interpolate_value(item, env)?;
+            }
         }
-    } else if let Some(idx) = inner.find(":?") {
-        let var_name = &inner[..idx];
-        let err_msg = &inner[idx + 2..];
-        match env.get(var_name) {
-            Some(val) if !val.is_empty() => Ok(val.clone()),
-            _ => Err(InterpolationError::MissingRequiredVariable(
-                var_name.to_string(),
-                if err_msg.is_empty() {
-                    "variable is required".to_string()
-                } else {
-                    err_msg.to_string()
-                },
-            )),
+        Value::Tagged(tagged) => interpolate_value(&mut tagged.value, env)?,
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Length of a leading `[A-Za-z_][A-Za-z0-9_]*` identifier.
+fn var_name_len(s: &str) -> usize {
+    let mut chars = s.char_indices();
+    match chars.next() {
+        Some((_, c)) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return 0,
+    }
+    chars
+        .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_'))
+        .map(|(i, _)| i)
+        .unwrap_or(s.len())
+}
+
+/// Index of the `}` that closes a `${`, honoring nested `${...}` in operands.
+fn find_closing_brace(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'$' if bytes.get(i + 1) == Some(&b'{') => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' if depth == 0 => return Some(i),
+            b'}' => depth -= 1,
+            _ => {}
         }
-    } else if let Some(idx) = inner.find('?') {
-        let var_name = &inner[..idx];
-        let err_msg = &inner[idx + 1..];
-        match env.get(var_name) {
-            Some(val) => Ok(val.clone()),
-            None => Err(InterpolationError::MissingRequiredVariable(
-                var_name.to_string(),
-                if err_msg.is_empty() {
-                    "variable is required".to_string()
-                } else {
-                    err_msg.to_string()
-                },
-            )),
+        i += 1;
+    }
+    None
+}
+
+fn resolve_braced(inner: &str, env: &HashMap<String, String>) -> Result<String, InterpolationError> {
+    let name_len = var_name_len(inner);
+    if name_len == 0 {
+        return Err(InterpolationError::SyntaxError(format!("${{{}}}", inner)));
+    }
+    let name = &inner[..name_len];
+    let rest = &inner[name_len..];
+    let value = env.get(name);
+
+    if rest.is_empty() {
+        return Ok(value.cloned().unwrap_or_default());
+    }
+
+    // ":" variants treat an empty value like an unset one.
+    let (empty_is_unset, op, operand) = match rest.strip_prefix(':') {
+        Some(r) => (true, r.chars().next(), r.get(1..).unwrap_or("")),
+        None => (false, rest.chars().next(), rest.get(1..).unwrap_or("")),
+    };
+    let missing = match value {
+        None => true,
+        Some(v) => empty_is_unset && v.is_empty(),
+    };
+
+    match op {
+        Some('-') if missing => interpolate_string(operand, env),
+        Some('-') => Ok(value.cloned().unwrap_or_default()),
+        Some('+') if missing => Ok(String::new()),
+        Some('+') => interpolate_string(operand, env),
+        Some('?') if missing => {
+            let msg = interpolate_string(operand, env)?;
+            Err(InterpolationError::MissingRequiredVariable(
+                name.to_string(),
+                if msg.is_empty() { "variable is required".to_string() } else { msg },
+            ))
         }
-    } else {
-        // Simple ${VAR}
-        Ok(env.get(inner).cloned().unwrap_or_default())
+        Some('?') => Ok(value.cloned().unwrap_or_default()),
+        _ => Err(InterpolationError::SyntaxError(format!("${{{}}}", inner))),
     }
 }
 
@@ -120,18 +165,18 @@ pub fn parse_env_content(content: &str) -> HashMap<String, String> {
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
+        let trimmed = trimmed.strip_prefix("export ").unwrap_or(trimmed);
 
         if let Some((key_part, val_part)) = trimmed.split_once('=') {
             let key = key_part.trim().to_string();
             let mut val = val_part.trim().to_string();
 
             // Strip enclosing quotes
-            if (val.starts_with('"') && val.ends_with('"'))
-                || (val.starts_with('\'') && val.ends_with('\''))
+            if val.len() >= 2
+                && ((val.starts_with('"') && val.ends_with('"'))
+                    || (val.starts_with('\'') && val.ends_with('\'')))
             {
-                if val.len() >= 2 {
-                    val = val[1..val.len() - 1].to_string();
-                }
+                val = val[1..val.len() - 1].to_string();
             } else if let Some(idx) = val.find(" #") {
                 // Inline comment on unquoted value
                 val = val[..idx].trim().to_string();
