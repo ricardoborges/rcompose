@@ -5,4 +5,5 @@ pub mod interpolation;
 pub mod extension;
 pub mod loader;
 
+pub use interpolation::*;
 pub use model::*;
