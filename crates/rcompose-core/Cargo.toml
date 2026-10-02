@@ -1,0 +1,16 @@
+[package]
+name = "rcompose-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+rcompose-spec = { path = "../rcompose-spec" }
+rcompose-engine = { path = "../rcompose-engine" }
+petgraph = "0.6"
+tokio = { version = "1.38", features = ["full"] }
+sha2 = "0.10"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

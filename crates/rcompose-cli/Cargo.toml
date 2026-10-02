@@ -1,0 +1,20 @@
+[package]
+name = "rcompose-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "rcompose"
+path = "src/main.rs"
+
+[dependencies]
+rcompose-spec = { path = "../rcompose-spec" }
+rcompose-engine = { path = "../rcompose-engine" }
+rcompose-core = { path = "../rcompose-core" }
+clap = { version = "4.5", features = ["derive", "cargo"] }
+tokio = { version = "1.38", features = ["full"] }
+indicatif = "0.17"
+colored = "2.1"
+anyhow = "1.0"

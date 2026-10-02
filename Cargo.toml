@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rcompose-spec",
+    "crates/rcompose-engine",
+    "crates/rcompose-core",
+    "crates/rcompose-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Ricardo Borges"]
+license = "MIT"
+repository = "https://github.com/ricardoborges/rcompose"
