@@ -2,6 +2,8 @@
 
 Docker Compose for Windows' new WSL containers (`wslc.exe`), written in Rust.
 
+Website: https://ricardoborges.github.io/rcompose/
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Rust](https://img.shields.io/badge/Rust-1.92%2B-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%2011%20%7C%20WSL-lightgrey.svg)
@@ -22,7 +24,7 @@ You need Windows 11 with the WSL container preview (`wslc.exe`) installed.
 The easiest way is the install script:
 
 ```powershell
-irm https://raw.githubusercontent.com/ricardoborges/rcompose/main/install.ps1 | iex
+irm https://ricardoborges.github.io/rcompose/install.ps1 | iex
 ```
 
 It grabs the latest release for your machine (x64 or ARM64), puts `rcompose.exe` in `%LOCALAPPDATA%\Programs\rcompose` and adds that folder to your user `PATH`. No admin rights needed. Run it again whenever you want to update. If you want a specific version or a different folder, set `RCOMPOSE_VERSION` (e.g. `v0.1.0`) or `RCOMPOSE_INSTALL_DIR` first.

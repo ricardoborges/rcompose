@@ -1,6 +1,6 @@
 # rcompose installer for Windows.
 #
-#   irm https://raw.githubusercontent.com/ricardoborges/rcompose/main/install.ps1 | iex
+#   irm https://ricardoborges.github.io/rcompose/install.ps1 | iex
 #
 # Downloads the latest release binary from GitHub, installs it into a per-user
 # folder and adds that folder to the user PATH. No administrator rights needed.

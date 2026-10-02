@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rcompose</title>
+<meta name="description" content="Docker Compose for Windows' WSL containers (wslc.exe). One small native binary, written in Rust.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23d9622b'/><path d='M9 11h14M9 16h14M9 21h9' stroke='white' stroke-width='3' stroke-linecap='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #fbfaf8;
+    --surface: #ffffff;
+    --text: #1c1b19;
+    --muted: #6b6760;
+    --border: #e7e3dc;
+    --accent: #d9622b;
+    --code-bg: #1d1c1a;
+    --code-text: #ece8e1;
+    --code-muted: #8f8a82;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141312;
+      --surface: #1c1b19;
+      --text: #ece8e1;
+      --muted: #9b968e;
+      --border: #2e2c29;
+      --accent: #ec7a43;
+      --code-bg: #0d0c0b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.65 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  a { color: inherit; text-decoration-color: var(--border); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--accent); }
+  code, pre { font-family: "JetBrains Mono", ui-monospace, Consolas, monospace; font-size: 0.9em; }
+  :not(pre) > code {
+    background: color-mix(in srgb, var(--border) 60%, transparent);
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+  }
+
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 16px; }
+
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 24px 0;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; letter-spacing: -0.01em; }
+  .logo svg { width: 26px; height: 26px; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 20px; font-size: 15px; }
+  nav a:hover { color: var(--text); }
+
+  .hero { padding: 56px 0 40px; }
+  .hero h1 {
+    font-size: clamp(34px, 6vw, 52px);
+    line-height: 1.08;
+    letter-spacing: -0.03em;
+    margin: 0 0 20px;
+    font-weight: 700;
+  }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero p.lede { font-size: 19px; color: var(--muted); margin: 0 0 36px; max-width: 600px; }
+
+  .install {
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 12px;
+    padding: 6px 6px 6px 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .install code {
+    flex: 1; min-width: 0;
+    overflow-x: auto; white-space: nowrap;
+    padding: 14px 0;
+    font-size: 14.5px;
+    scrollbar-width: none;
+  }
+  .install code::-webkit-scrollbar { display: none; }
+  .install .ps { color: var(--code-muted); user-select: none; margin-right: 10px; }
+  .copy {
+    flex: none;
+    font: 500 13px Inter, system-ui, sans-serif;
+    color: var(--code-text);
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 9px 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .copy:hover { background: rgba(255,255,255,0.16); }
+  .install-note { color: var(--muted); font-size: 14px; margin: 14px 0 0; }
+
+  section { padding: 40px 0; border-top: 1px solid var(--border); }
+  section h2 { font-size: 22px; letter-spacing: -0.015em; margin: 0 0 16px; }
+  section p { margin: 0 0 16px; }
+
+  pre.term {
+    background: var(--code-bg);
+    color: var(--code-text);
+    border-radius: 12px;
+    padding: 20px;
+    overflow-x: auto;
+    margin: 20px 0;
+    line-height: 1.7;
+  }
+  pre.term .c { color: var(--code-muted); }
+
+  ul.points { list-style: none; padding: 0; margin: 0; display: grid; gap: 18px; }
+  ul.points li { padding-left: 22px; position: relative; }
+  ul.points li::before {
+    content: ""; position: absolute; left: 0; top: 0.68em;
+    width: 8px; height: 8px; border-radius: 2px; background: var(--accent);
+  }
+  ul.points strong { font-weight: 600; }
+
+  footer { border-top: 1px solid var(--border); padding: 28px 0 48px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  @media (max-width: 520px) {
+    nav a:first-child { display: none; }
+    .hero { padding-top: 32px; }
+    .hero p.lede { font-size: 17px; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <a class="logo" href="./">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#d9622b"/><path d="M9 11h14M9 16h14M9 21h9" stroke="white" stroke-width="3" stroke-linecap="round"/></svg>
+        rcompose
+      </a>
+      <nav>
+        <a href="https://github.com/ricardoborges/rcompose/releases">Releases</a>
+        <a href="https://github.com/ricardoborges/rcompose">GitHub</a>
+      </nav>
+    </header>
+
+    <div class="hero">
+      <h1>Docker Compose for <em>WSL containers</em>.</h1>
+      <p class="lede">Windows 11 can now run Linux containers natively with <code>wslc.exe</code>, no Docker Desktop required. It just doesn't come with Compose. rcompose fills that gap: point it at your existing <code>compose.yaml</code> and run <code>rcompose up</code>.</p>
+
+      <div class="install">
+        <code><span class="ps">PS&gt;</span><span id="cmd">irm https://ricardoborges.github.io/rcompose/install.ps1 | iex</span></code>
+        <button class="copy" type="button" data-copy="cmd">Copy</button>
+      </div>
+      <p class="install-note">Installs to <code>%LOCALAPPDATA%\Programs\rcompose</code> and adds it to your PATH. No admin rights. Works on x64 and ARM64.</p>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <h2>Same commands you already know</h2>
+      <p>If you've used <code>docker compose</code>, there's nothing new to learn. From any folder with a compose file:</p>
+<pre class="term"><span class="c"># start everything in the background</span>
+rcompose up -d
+
+<span class="c"># see what's running, then follow the logs</span>
+rcompose ps
+rcompose logs -f
+
+<span class="c"># open a shell in a service</span>
+rcompose exec web sh
+
+<span class="c"># stop and clean up</span>
+rcompose down -v</pre>
+      <p>Also there: <code>build</code>, <code>pull</code>, <code>start</code>, <code>stop</code>, <code>restart</code> and <code>config</code>, along with <code>-f</code>, <code>-p</code>, <code>--env-file</code> and <code>--profile</code>.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>What it does for you</h2>
+      <ul class="points">
+        <li><strong>Starts things in the right order, fast.</strong> Services that don't depend on each other come up in parallel, and <code>depends_on</code> conditions like <code>service_healthy</code> are respected.</li>
+        <li><strong>Only touches what changed.</strong> Running <code>rcompose up</code> again recreates just the containers whose configuration is different, the same way Docker Compose does.</li>
+        <li><strong>Copes with the preview's rough edges.</strong> The WSL container preview sometimes throws transient errors when several containers start at once. rcompose retries them instead of failing halfway.</li>
+        <li><strong>Tells you what won't work.</strong> When your file uses something <code>wslc</code> can't do yet, like <code>restart</code> policies or Linux-path bind mounts, you get a warning rather than a silent surprise.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>Before you install</h2>
+      <p>You need Windows 11 with the WSL container preview installed, so that <code>wslc.exe</code> is available. rcompose finds it through <code>WSLC_BIN</code>, then your PATH, then <code>C:\Program Files\WSL\wslc.exe</code>.</p>
+      <p>To update, run the install command again. To pin a version, set <code>$env:RCOMPOSE_VERSION = "v0.1.0"</code> first. Prefer building from source? <code>cargo install --path crates/rcompose-cli</code> from a clone of the <a href="https://github.com/ricardoborges/rcompose">repository</a> works too.</p>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span>MIT licensed · made by <a href="https://github.com/ricardoborges">Ricardo Borges</a></span>
+      <a href="https://github.com/ricardoborges/rcompose/blob/main/install.ps1">Read the install script</a>
+    </div>
+  </footer>
+
+<script>
+  document.querySelectorAll('.copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var text = document.getElementById(btn.dataset.copy).textContent;
+      var done = function () {
+        btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = 'Copy'; }, 1600);
+      };
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(done, function () {});
+      }
+    });
+  });
+</script>
+</body>
+</html>
