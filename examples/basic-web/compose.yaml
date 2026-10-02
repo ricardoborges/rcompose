@@ -1,0 +1,11 @@
+version: "3.8"
+name: basic-web
+
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8888:80"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+    restart: always

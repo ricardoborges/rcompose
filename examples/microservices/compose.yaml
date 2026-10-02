@@ -1,0 +1,38 @@
+version: "3.8"
+name: microservices-demo
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-admin123}
+      POSTGRES_DB: demo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  api:
+    image: my-api:latest
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgres://admin:admin123@db:5432/demo
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      - db
+      - redis
+
+  web:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
