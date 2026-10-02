@@ -40,21 +40,23 @@ rcompose/
 - **Windows 11** with WSL Container preview (`wslc.exe`) installed.
 - **Rust 1.92+** with `cargo`.
 
-### Compiling from Source
+### Installing from Source
 
 ```powershell
-# Clone the repository
 git clone https://github.com/ricardoborges/rcompose.git
 cd rcompose
 
-# Build optimized release binary
-cargo build --release
-
-# The compiled binary is at:
-# target/release/rcompose.exe
+# Builds in release mode and installs to %CARGO_HOME%\bin (by default %USERPROFILE%\.cargo\bin, which rustup puts on PATH)
+cargo install --path crates/rcompose-cli
 ```
 
-You can copy `target/release/rcompose.exe` to a folder in your `PATH` (such as `C:\Users\<user>\.cargo\bin` or `C:\Program Files\WSL`).
+Run the same command again to update. If you set a custom `CARGO_HOME` whose `bin` folder is not on `PATH`, add `--root "$env:USERPROFILE\.cargo"` to install into the rustup folder instead.
+
+### Installing a Release Binary
+
+Put `rcompose.exe` in a per-user folder such as `%LOCALAPPDATA%\Programs\rcompose` and add that folder to your user `PATH`. No administrator rights are needed.
+
+Do not install it into `C:\Program Files\WSL`: that folder belongs to the WSL installer, which may remove or overwrite foreign files on updates or repairs. `rcompose` does not need to sit next to `wslc.exe`; it locates it through `WSLC_BIN`, then `PATH`, then `C:\Program Files\WSL\wslc.exe`.
 
 ---
 
@@ -126,7 +128,7 @@ Global options: `-f <file>`, `-p <project>`, `--env-file <file>`, `--profile <na
 Keys the wslc engine cannot honor are reported as warnings instead of being dropped silently:
 
 - `restart` policies (wslc has no restart support yet)
-- Bind mounts of Linux host paths such as `/var/run/docker.sock` (no Docker socket exists on a Windows host); the mount is skipped
+- Bind mounts of Linux host paths such as `/var/run/docker.sock`: wslc only accepts Windows paths as bind sources, so the mount is skipped (otherwise wslc would create the path, e.g. `D:\var\run\docker.sock`, on the current drive)
 - `privileged`, `cap_add`, `devices`, `extra_hosts`, `secrets`, `configs`, `network_mode`, among others
 
 ---

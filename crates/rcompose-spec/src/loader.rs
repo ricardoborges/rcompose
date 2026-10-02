@@ -467,7 +467,7 @@ impl ServiceParser<'_> {
                         self.warn(
                             service,
                             format!(
-                                "bind mount '{}' is a Linux host path with no equivalent on a Windows host (mount skipped)",
+                                "bind mount '{}' is a Linux path; wslc only mounts Windows paths (mount skipped)",
                                 source
                             ),
                         );
