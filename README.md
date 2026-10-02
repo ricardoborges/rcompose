@@ -1,137 +1,103 @@
 # rcompose
 
-> **Docker Compose for Windows WSL Containers (`wslc.exe`) in Rust.**
+Docker Compose for Windows' new WSL containers (`wslc.exe`), written in Rust.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Rust](https://img.shields.io/badge/Rust-1.92%2B-orange.svg)
 ![Platform](https://img.shields.io/badge/platform-Windows%2011%20%7C%20WSL-lightgrey.svg)
 
-Microsoft's native WSL container preview (`wslc.exe`) runs Linux containers directly on Windows without Docker Desktop or Podman machine. However, it does not currently provide a native Compose tool.
+Microsoft's WSL container preview lets you run Linux containers on Windows without Docker Desktop or a Podman machine. What it doesn't have is Compose. I wanted to keep using my existing `compose.yaml` files, so I wrote `rcompose`: you run `rcompose up` in a folder and it drives `wslc` for you.
 
-**`rcompose`** brings the full Docker Compose experience to WSL containers:
-- **Rust Performance & Safety**: High-speed, single native executable with asynchronous I/O and zero-cost abstractions.
-- **DAG Parallel Orchestrator**: Uses Directed Acyclic Graphs (`petgraph`) and Tokio to start independent services concurrently while strictly enforcing `depends_on`.
-- **Config Drift Detection**: Computes canonical SHA-256 hashes stored in container labels (`com.docker.compose.config-hash`) to recreate only modified containers on `rcompose up`.
-- **Resilient Engine**: Automatically handles Windows kernel and WSL preview concurrency errors (`ERROR_SHARING_VIOLATION`, `ERROR_ALREADY_EXISTS`) via smart exponential backoff retries.
-- **Rich Terminal UX**: Spinners and progress indicators with `indicatif`, multiplexed color-coded logs per service, and graceful `Ctrl+C` shutdown.
+A few things it does that you might care about:
 
----
+- Services that don't depend on each other start in parallel; `depends_on` (including `service_healthy`) is still respected.
+- `rcompose up` only recreates containers whose configuration actually changed. It stores a hash of each service's config in a container label, the same way Docker Compose does.
+- The WSL preview sometimes fails with transient errors like `ERROR_SHARING_VIOLATION` when several containers start at once. `rcompose` retries those instead of giving up.
+- `rcompose logs -f` interleaves every service's output with a color per service, and `Ctrl+C` shuts things down cleanly.
 
-## Architecture
+## Installing
 
-`rcompose` is organized as a modular Cargo Workspace:
+You need Windows 11 with the WSL container preview (`wslc.exe`) installed.
 
-```
-rcompose/
-├── Cargo.toml                 # Root workspace
-├── crates/
-│   ├── rcompose-spec/         # Compose file parser, variable interpolation, env loading
-│   ├── rcompose-engine/       # ContainerEngine trait & WslcEngine subprocess driver with retries
-│   ├── rcompose-core/         # DAG dependency scheduler, Tokio parallel executor & drift detector
-│   └── rcompose-cli/          # CLI interface (Clap v4), terminal UI & log multiplexer
-└── examples/                  # Ready-to-run Compose examples
+The easiest way is the install script:
+
+```powershell
+irm https://raw.githubusercontent.com/ricardoborges/rcompose/main/install.ps1 | iex
 ```
 
----
+It grabs the latest release for your machine (x64 or ARM64), puts `rcompose.exe` in `%LOCALAPPDATA%\Programs\rcompose` and adds that folder to your user `PATH`. No admin rights needed. Run it again whenever you want to update. If you want a specific version or a different folder, set `RCOMPOSE_VERSION` (e.g. `v0.1.0`) or `RCOMPOSE_INSTALL_DIR` first.
 
-## Installation & Build
-
-### Requirements
-- **Windows 11** with WSL Container preview (`wslc.exe`) installed.
-- **Rust 1.92+** with `cargo`.
-
-### Installing from Source
+If you'd rather build it yourself, you'll need Rust 1.92 or newer:
 
 ```powershell
 git clone https://github.com/ricardoborges/rcompose.git
 cd rcompose
-
-# Builds in release mode and installs to %CARGO_HOME%\bin (by default %USERPROFILE%\.cargo\bin, which rustup puts on PATH)
 cargo install --path crates/rcompose-cli
 ```
 
-Run the same command again to update. If you set a custom `CARGO_HOME` whose `bin` folder is not on `PATH`, add `--root "$env:USERPROFILE\.cargo"` to install into the rustup folder instead.
+That installs into `%USERPROFILE%\.cargo\bin`, which rustup already puts on your `PATH`. (If you use a custom `CARGO_HOME` that isn't on `PATH`, add `--root "$env:USERPROFILE\.cargo"`.)
 
-### Installing a Release Binary
+One thing to avoid: don't drop `rcompose.exe` into `C:\Program Files\WSL`. That folder belongs to the WSL installer, which can remove files it doesn't recognize when it updates or repairs itself. `rcompose` doesn't need to live next to `wslc.exe`; it looks for it in `WSLC_BIN`, then on `PATH`, then at `C:\Program Files\WSL\wslc.exe`.
 
-Put `rcompose.exe` in a per-user folder such as `%LOCALAPPDATA%\Programs\rcompose` and add that folder to your user `PATH`. No administrator rights are needed.
+## Using it
 
-Do not install it into `C:\Program Files\WSL`: that folder belongs to the WSL installer, which may remove or overwrite foreign files on updates or repairs. `rcompose` does not need to sit next to `wslc.exe`; it locates it through `WSLC_BIN`, then `PATH`, then `C:\Program Files\WSL\wslc.exe`.
-
----
-
-## Quick Start
-
-Navigate to any directory with a `compose.yaml` or `docker-compose.yml`:
+If you've used `docker compose`, you already know how this works. From a folder with a `compose.yaml` or `docker-compose.yml`:
 
 ```powershell
-# Start services in the background
-rcompose up -d
-
-# Check container status
-rcompose ps
-
-# Stream color-coded logs for all services
-rcompose logs -f
-
-# Execute an interactive command inside a running container
-rcompose exec web sh
-
-# Stop and remove containers and networks
-rcompose down -v
+rcompose up -d          # start everything in the background
+rcompose ps             # see what's running
+rcompose logs -f        # follow the logs
+rcompose exec web sh    # open a shell in the "web" service
+rcompose down -v        # stop and clean up, including named volumes
 ```
 
----
+To see the final config after variables and `.env` are applied, run `rcompose config` (add `--format json` if you prefer JSON).
 
-## Inspecting the Configuration
-
-Run `rcompose config` to inspect the resolved configuration with variables applied:
-
-```powershell
-rcompose config
-rcompose config --format json
-```
-
----
-
-## Supported Commands
+### Commands
 
 Global options: `-f <file>`, `-p <project>`, `--env-file <file>`, `--profile <name>` (repeatable).
 
-| Command | Description |
+| Command | What it does |
 |---|---|
-| `rcompose up [-d] [--build \| --no-build] [--force-recreate] [--remove-orphans] [-t <secs>] [services]` | Build/pull missing images and start services, honoring `depends_on` conditions |
+| `rcompose up [-d] [--build \| --no-build] [--force-recreate] [--remove-orphans] [-t <secs>] [services]` | Build or pull missing images and start services, waiting on `depends_on` conditions |
 | `rcompose down [-v] [--remove-orphans] [-t <secs>]` | Stop and remove containers and networks (and named volumes with `-v`) |
-| `rcompose ps [-a] [-q] [services]` | Show container status, health, and ports |
-| `rcompose logs [-f] [-t] [-n <tail>] [services]` | Multiplexed colored logs |
-| `rcompose exec [-T] [-d] [-u <user>] [-w <dir>] [-e K=V] [--index N] <service> <cmd...>` | Execute a command in a running container |
-| `rcompose start / stop / restart [-t <secs>] [services]` | Service lifecycle control |
-| `rcompose build [--no-cache] [--pull] [services]` | Build images defined in `build:` sections |
+| `rcompose ps [-a] [-q] [services]` | Container status, health and ports |
+| `rcompose logs [-f] [-t] [-n <tail>] [services]` | Logs from all services, color-coded |
+| `rcompose exec [-T] [-d] [-u <user>] [-w <dir>] [-e K=V] [--index N] <service> <cmd...>` | Run a command in a running container |
+| `rcompose start / stop / restart [-t <secs>] [services]` | Start, stop or restart services |
+| `rcompose build [--no-cache] [--pull] [services]` | Build images from `build:` sections |
 | `rcompose pull [services]` | Pull service images |
-| `rcompose config [--format json\|yaml] [--services] [-q]` | Validate and view the resolved project |
-| `rcompose version` | Show version info |
+| `rcompose config [--format json\|yaml] [--services] [-q]` | Validate and print the resolved project |
+| `rcompose version` | Print the version |
 
----
+## What works and what doesn't
 
-## Compose Compatibility
+Most everyday Compose files should just work. Supported:
 
-`rcompose` reads standard `compose.yaml` / `docker-compose.yml` files:
-
-- Variable interpolation (`${VAR}`, `${VAR:-default}`, `${VAR:?error}`, `${VAR:+alt}`, nesting, `$$`) from the process environment and `.env`
+- Variable interpolation (`${VAR}`, `${VAR:-default}`, `${VAR:?error}`, `${VAR:+alt}`, nesting, `$$`) from your environment and `.env`
 - YAML anchors and merge keys (`<<: *base`), `x-*` extension fields
-- Short and long syntax for `ports`, `volumes`, `env_file` (with `required: false`) and `depends_on`
+- Short and long syntax for `ports`, `volumes`, `env_file` (including `required: false`) and `depends_on`
 - `depends_on` conditions: `service_started`, `service_healthy`, `service_completed_successfully`
 - `healthcheck`, multiple `networks` with `aliases`, `external` networks and volumes, `profiles`
 - `build` (context, dockerfile, args, target), `deploy.replicas`, `deploy.resources.limits`, GPU reservations
-- Project name precedence: `-p` > `COMPOSE_PROJECT_NAME` > `name:` > directory name
+- Project name from `-p`, then `COMPOSE_PROJECT_NAME`, then `name:`, then the folder name
 
-Keys the wslc engine cannot honor are reported as warnings instead of being dropped silently:
+Some things `wslc` simply can't do yet. When your file uses them, `rcompose` prints a warning rather than silently ignoring them:
 
-- `restart` policies (wslc has no restart support yet)
-- Bind mounts of Linux host paths such as `/var/run/docker.sock`: wslc only accepts Windows paths as bind sources, so the mount is skipped (otherwise wslc would create the path, e.g. `D:\var\run\docker.sock`, on the current drive)
-- `privileged`, `cap_add`, `devices`, `extra_hosts`, `secrets`, `configs`, `network_mode`, among others
+- `restart` policies (wslc doesn't support restarts yet)
+- Bind mounts from Linux host paths like `/var/run/docker.sock`. wslc only accepts Windows paths as bind sources, and passing it a Linux path would make it create something like `D:\var\run\docker.sock` on your current drive, so `rcompose` skips the mount.
+- `privileged`, `cap_add`, `devices`, `extra_hosts`, `secrets`, `configs`, `network_mode` and a few others
 
----
+## How the code is laid out
+
+It's a Cargo workspace with four crates:
+
+- `crates/rcompose-spec` parses Compose files, handles interpolation and `.env` loading
+- `crates/rcompose-engine` talks to `wslc.exe` (and does the retrying)
+- `crates/rcompose-core` works out the start order and runs services in parallel, plus the change detection
+- `crates/rcompose-cli` is the command line and terminal output
+
+There are some ready-to-run Compose files in [examples/](examples/).
 
 ## License
 
