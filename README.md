@@ -41,6 +41,17 @@ That installs into `%USERPROFILE%\.cargo\bin`, which rustup already puts on your
 
 One thing to avoid: don't drop `rcompose.exe` into `C:\Program Files\WSL`. That folder belongs to the WSL installer, which can remove files it doesn't recognize when it updates or repairs itself. `rcompose` doesn't need to live next to `wslc.exe`; it looks for it in `WSLC_BIN`, then on `PATH`, then at `C:\Program Files\WSL\wslc.exe`.
 
+## Prerequisites (Windows)
+
+`rcompose` relies on **WSL Containers (`wslc.exe`)**, which requires the Windows **Host Compute Service (`vmcompute`)** and **Host Network Service (HNS)** to be active. No Linux distribution or Docker Desktop installation is required.
+
+Ensure the required Windows optional features are enabled (run PowerShell as **Administrator**):
+
+```powershell
+Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -All -NoRestart
+Enable-WindowsOptionalFeature -Online -FeatureName Containers -All -NoRestart
+Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -All
+
 ## Using it
 
 If you've used `docker compose`, you already know how this works. From a folder with a `compose.yaml` or `docker-compose.yml`:
